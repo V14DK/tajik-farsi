@@ -1,3 +1,4 @@
+import math
 import requests
 import multiprocessing
 import pandas as pd
@@ -43,32 +44,51 @@ class Parser:
             result += quote.text
         return result
 
-    def __parse_text_to_sentences(self, url, result):
+    def __parse_text_to_sentences(self, url, result, id):
         sentences = self.__parse_html_to_text(url)
         if 'tajik' in url:
             sentences = [s for s in sentences.rstrip().lstrip().split('.') if s]
-            result[0] += sentences
-            print('tajik = ', len(result[0]))
+            result[id] += sentences
         else:
             my_normalizer = Normalizer()
             my_tokenizer = Tokenizer()
-            sentences = my_tokenizer.tokenize_sentences(my_normalizer.normalize(sentences))
-            result[1] += sentences
-            print('farsi = ', len(result[1]))
+            sentences = [s for s in my_tokenizer.tokenize_sentences(my_normalizer.normalize(sentences)) if s]
+            result[id] += sentences
 
-    def parse_corpus(self, language, result):
-        for i in range(len(self.urls)):
-            self.__parse_text_to_sentences(self.urls[language + ' url'][i], result)
+    def parse_corpus(self, language, result, id, start, final):
+        for i in range(start, final):
+            self.__parse_text_to_sentences(self.urls[language + ' url'][i], result, id)
 
     def get_sentences(self):
         manager = multiprocessing.Manager()
-        result = manager.list([manager.list(), manager.list()])
-        processes = [
-                        multiprocessing.Process(target=self.parse_corpus, args=('tajik', result)),
-                        multiprocessing.Process(target=self.parse_corpus, args=('farsi', result))
-        ]
+        n_proc = multiprocessing.cpu_count()
+        result = manager.dict({i: manager.list([]) for i in range(n_proc)})
+        processes = [0 for _ in range(n_proc)]
+        start = 0
+        for i in range(n_proc//2):
+            final = math.ceil(len(self.urls) / (n_proc // 2) * (i+1))
+            processes[i] = multiprocessing.Process(target=self.parse_corpus,
+                                                   args=('tajik', result, i, start, final))
+            processes[i+n_proc//2] = multiprocessing.Process(target=self.parse_corpus,
+                                                             args=('farsi', result,
+                                                                   i+n_proc//2, start, final))
+            start = final
         for process in processes:
             process.start()
         for process in processes:
             process.join()
         return result
+
+    @staticmethod
+    def sentences_to_csv(result):
+        result_t = []
+        result_f = []
+        for i in range(len(result)):
+            if i < multiprocessing.cpu_count()//2:
+                result_t += result[i]
+            else:
+                result_f += result[i]
+        tajik = pd.DataFrame({'tajik': list(result_t)})
+        farsi = pd.DataFrame({'farsi': list(result_f)})
+        tajik.to_csv('tajik.csv', index=False)
+        farsi.to_csv('farsi.csv', index=False)
