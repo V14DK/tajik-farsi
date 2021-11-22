@@ -90,5 +90,9 @@ class Parser:
                 result_f += result[i]
         tajik = pd.DataFrame({'tajik': list(result_t)})
         farsi = pd.DataFrame({'farsi': list(result_f)})
-        tajik.to_csv('tajik.csv', index=False)
-        farsi.to_csv('farsi.csv', index=False)
+        tajik.to_csv('tajik.csv', index_label='id')
+        farsi.to_csv('farsi.csv', index_label='id')
+        tajik = pd.read_csv('tajik.csv')
+        farsi = pd.read_csv('farsi.csv')
+        result = tajik.merge(farsi, how='outer')
+        result.to_csv('result.csv', index=False)
