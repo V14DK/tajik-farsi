@@ -2,6 +2,7 @@ import math
 import requests
 import multiprocessing
 import pandas as pd
+from finding import Finder
 from bs4 import BeautifulSoup
 from parsivar import Tokenizer
 from parsivar import Normalizer
@@ -44,34 +45,39 @@ class Parser:
             result += quote.text
         return result
 
-    def __parse_text_to_sentences(self, url, result, id):
-        sentences = self.__parse_html_to_text(url)
-        if 'tajik' in url:
-            sentences = [s for s in sentences.rstrip().lstrip().split('.') if s]
-            result[id] += sentences
-        else:
-            my_normalizer = Normalizer()
-            my_tokenizer = Tokenizer()
-            sentences = [s for s in my_tokenizer.tokenize_sentences(my_normalizer.normalize(sentences)) if s]
-            result[id] += sentences
+    def __parse_text_to_sentences(self, url):
+        sentences = {'tajik': self.__parse_html_to_text(url[0]), 'farsi': self.__parse_html_to_text(url[1])}
+        my_normalizer = Normalizer()
+        my_tokenizer = Tokenizer()
+        sentences['tajik'] = [s+'.' for s in sentences['tajik'].rstrip().lstrip().split('.') if s]
+        sentences['farsi'] = [s for s in my_tokenizer.tokenize_sentences(my_normalizer.normalize(sentences['farsi'])) if s]
+        return sentences
 
-    def parse_corpus(self, language, result, id, start, final):
-        for i in range(start, final):
-            self.__parse_text_to_sentences(self.urls[language + ' url'][i], result, id)
+    def parse_corpus(self, start, final, result):
+        #для тестирования брал только первый блок
+        # for i in range(start, final):
+            sentences = self.__parse_text_to_sentences(self.urls.iloc[0])
+            pairs = Finder.find_pairs(sentences)
+            # if i < self.urls.shape[0]:
+            result[0] = pairs
 
     def get_sentences(self):
+        #создается столько ячеек в result, сколько пар текстов имеется,
+        #чтобы можно было сразу после получения параллельных текстов вытащить из них
+        #параллельные предложения.
+        #возможна проблема с api, когда будет поступать много запросов на перевод,
+        #т.к. одновременно будет запущено (количество ядер) процессов, плюс, возможно, стоит
+        #использовать asyncio, т.к. тут уже более I/O-bound операции, чем раньше, что,
+        #скорее всего, нивелирует преимущества работы на нескольких процессах
         manager = multiprocessing.Manager()
         n_proc = multiprocessing.cpu_count()
-        result = manager.dict({i: manager.list([]) for i in range(n_proc)})
+        result = manager.dict({i: manager.list([]) for i in range(self.url.shape[0])})
         processes = [0 for _ in range(n_proc)]
         start = 0
-        for i in range(n_proc//2):
-            final = math.ceil(len(self.urls) / (n_proc // 2) * (i+1))
+        for i in range(n_proc):
+            final = math.ceil(self.urls.shape[0] / n_proc) * (i + 1)
             processes[i] = multiprocessing.Process(target=self.parse_corpus,
-                                                   args=('tajik', result, i, start, final))
-            processes[i+n_proc//2] = multiprocessing.Process(target=self.parse_corpus,
-                                                             args=('farsi', result,
-                                                                   i+n_proc//2, start, final))
+                                                   args=(start, final, result))
             start = final
         for process in processes:
             process.start()
@@ -81,13 +87,10 @@ class Parser:
 
     @staticmethod
     def sentences_to_csv(result):
+        #начал переделывать для параллельных предложений
+        pairs = [[result[i][0], result[i][1]] for i in range(len(result))]
         result_t = []
         result_f = []
-        for i in range(len(result)):
-            if i < multiprocessing.cpu_count()//2:
-                result_t += result[i]
-            else:
-                result_f += result[i]
         tajik = pd.DataFrame({'tajik': list(result_t)})
         farsi = pd.DataFrame({'farsi': list(result_f)})
         tajik.to_csv('tajik.csv', index_label='id')
