@@ -5,12 +5,15 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from parsivar import Tokenizer
 from parsivar import Normalizer
+from finding import Finder
 
 
 class Parser:
     def __init__(self, urls):
         self.urls = pd.read_csv(urls)
         self.soup = BeautifulSoup
+        self.normalizer = Normalizer()
+        self.tokenizer = Tokenizer()
 
     @staticmethod
     def __delete_tags(soup):
@@ -38,40 +41,39 @@ class Parser:
         if 'tajik' in url:
             quotes = soup.find_all('div', class_='story-body__inner')
         else:
-            quotes = soup.find_all('main') if soup.find_all('main') else soup.find_all('div', class_='bodytext')
+            quotes = soup.find_all('main') if soup.find_all('main') \
+                else soup.find_all('div', class_='bodytext')
         result = ''
         for quote in quotes:
             result += quote.text
         return result
 
-    def __parse_text_to_sentences(self, url, result, id):
-        sentences = self.__parse_html_to_text(url)
-        if 'tajik' in url:
-            sentences = [s for s in sentences.rstrip().lstrip().split('.') if s]
-            result[id] += sentences
-        else:
-            my_normalizer = Normalizer()
-            my_tokenizer = Tokenizer()
-            sentences = [s for s in my_tokenizer.tokenize_sentences(my_normalizer.normalize(sentences)) if s]
-            result[id] += sentences
+    def __parse_text_to_sentences(self, url):
+        sentences = {'tajik': self.__parse_html_to_text(url[0]),
+                     'farsi': self.__parse_html_to_text(url[1])}
+        sentences['tajik'] = [s+'.' for s in sentences['tajik'].rstrip().lstrip().split('.') if s]
+        sentences['farsi'] = [s for s in self.tokenizer.tokenize_sentences(
+            self.normalizer.normalize(sentences['farsi'])) if s]
+        return sentences
 
-    def parse_corpus(self, language, result, id, start, final):
+    def parse_corpus(self, start, final, result):
         for i in range(start, final):
-            self.__parse_text_to_sentences(self.urls[language + ' url'][i], result, id)
+            sentences = self.__parse_text_to_sentences(self.urls.iloc[i])
+            pairs = Finder.find_pairs(sentences)
+            result[i] = pairs
 
     def get_sentences(self):
+        len_urls = self.urls.shape[0]
         manager = multiprocessing.Manager()
         n_proc = multiprocessing.cpu_count()
-        result = manager.dict({i: manager.list([]) for i in range(n_proc)})
+        result = manager.dict({i: manager.list([]) for i in range(len_urls)})
         processes = [0 for _ in range(n_proc)]
         start = 0
-        for i in range(n_proc//2):
-            final = math.ceil(len(self.urls) / (n_proc // 2) * (i+1))
+        for i in range(n_proc):
+            ceil = math.ceil(len_urls / n_proc) * (i + 1)
+            final = ceil if ceil < len_urls else len_urls
             processes[i] = multiprocessing.Process(target=self.parse_corpus,
-                                                   args=('tajik', result, i, start, final))
-            processes[i+n_proc//2] = multiprocessing.Process(target=self.parse_corpus,
-                                                             args=('farsi', result,
-                                                                   i+n_proc//2, start, final))
+                                                   args=(start, final, result))
             start = final
         for process in processes:
             process.start()
@@ -81,18 +83,9 @@ class Parser:
 
     @staticmethod
     def sentences_to_csv(result):
-        result_t = []
-        result_f = []
+        pairs = {'tajik': [], 'farsi': []}
         for i in range(len(result)):
-            if i < multiprocessing.cpu_count()//2:
-                result_t += result[i]
-            else:
-                result_f += result[i]
-        tajik = pd.DataFrame({'tajik': list(result_t)})
-        farsi = pd.DataFrame({'farsi': list(result_f)})
-        tajik.to_csv('tajik.csv', index_label='id')
-        farsi.to_csv('farsi.csv', index_label='id')
-        tajik = pd.read_csv('tajik.csv')
-        farsi = pd.read_csv('farsi.csv')
-        result = tajik.merge(farsi, how='outer')
-        result.to_csv('result.csv', index=False)
+            pairs['tajik'] += result[i]['tajik']
+            pairs['farsi'] += result[i]['farsi']
+        pairs = pd.DataFrame(pairs)
+        pairs.to_csv('pairs.csv', index_label='id')
