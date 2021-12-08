@@ -14,6 +14,7 @@ class Parser:
         self.soup = BeautifulSoup
         self.normalizer = Normalizer()
         self.tokenizer = Tokenizer()
+        self.finder = Finder()
 
     @staticmethod
     def __delete_tags(soup):
@@ -56,13 +57,13 @@ class Parser:
             self.normalizer.normalize(sentences['farsi'])) if s]
         return sentences
 
-    def parse_corpus(self, start, final, result):
+    def _parse_corpus(self, start, final, result):
         for i in range(start, final):
             sentences = self.__parse_text_to_sentences(self.urls.iloc[i])
-            pairs = Finder.find_pairs(sentences)
+            pairs = self.finder.find_pairs(sentences)
             result[i] = pairs
 
-    def get_sentences(self):
+    def _get_sentences(self):
         len_urls = self.urls.shape[0]
         manager = multiprocessing.Manager()
         n_proc = multiprocessing.cpu_count()
@@ -72,7 +73,7 @@ class Parser:
         for i in range(n_proc):
             ceil = math.ceil(len_urls / n_proc) * (i + 1)
             final = ceil if ceil < len_urls else len_urls
-            processes[i] = multiprocessing.Process(target=self.parse_corpus,
+            processes[i] = multiprocessing.Process(target=self._parse_corpus,
                                                    args=(start, final, result))
             start = final
         for process in processes:

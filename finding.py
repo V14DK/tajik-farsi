@@ -3,19 +3,18 @@ from parsivar import Tokenizer
 
 
 class Finder:
-    punc = r'!#()*,-./:[]«»،ء؛؟۰۱۲۳۴۵۶۷۸۹…$﷼َٔ?"'
-    tokenizer = Tokenizer()
-    languages = ['tajik', 'farsi']
+    def __init__(self):
+        self.punc = r'!#()*,-./:[]«»،ء؛؟۰۱۲۳۴۵۶۷۸۹…$﷼َٔ?"'
+        self.tokenizer = Tokenizer()
+        self.languages = ['tajik', 'farsi']
 
-    @staticmethod
-    def __delete_existing(sentences, index):
-        for lang in Finder.languages:
+    def __delete_existing(self, sentences, index):
+        for lang in self.languages:
             sentences[lang] = [sentences[lang][i] for i in range(len(sentences[lang]))
                                if i not in index[lang]]
         index = {'tajik': [], 'farsi': []}
 
-    @staticmethod
-    def __find_pairs(sentences, pairs, index):
+    def __find_pairs(self, sentences, pairs, index):
         maxl = max(len(sentences['farsi']), len(sentences['tajik']))
         minl = min(len(sentences['farsi']), len(sentences['tajik']))
         for i in range(len(sentences['tajik'])):
@@ -26,8 +25,8 @@ class Finder:
                 if j > i + maxl - minl:
                     break
                 sen_f = sentences['farsi'][j]
-                tbl_f = sen_f.maketrans({char: '' for char in Finder.punc})
-                sen_f = Finder.tokenizer.tokenize_words(sentences['farsi'][j].translate(tbl_f))
+                tbl_f = sen_f.maketrans({char: '' for char in self.punc})
+                sen_f = self.tokenizer.tokenize_words(sentences['farsi'][j].translate(tbl_f))
                 if (len(sen_t) <= len(sen_f) + 2) and (len(sen_t) >= len(sen_f) - 2) \
                         and sentences['tajik'][i] not in pairs['tajik'] \
                         and sentences['farsi'][j] not in pairs['farsi']:
@@ -36,11 +35,10 @@ class Finder:
                     index['tajik'].append(i)
                     index['farsi'].append(j)
                     break
-        Finder.__delete_existing(sentences, index)
+        self.__delete_existing(sentences, index)
 
-    @staticmethod
-    def find_pairs(sentences):
+    def find_pairs(self, sentences):
         pairs = {'tajik': [], 'farsi': []}
         index = {'tajik': [], 'farsi': []}
-        Finder.__find_pairs(sentences, pairs, index)
+        self.__find_pairs(sentences, pairs, index)
         return pairs
