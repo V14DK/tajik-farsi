@@ -1,4 +1,4 @@
-from parsering import Parser
+from parsing import Parser
 
 
 def main():
